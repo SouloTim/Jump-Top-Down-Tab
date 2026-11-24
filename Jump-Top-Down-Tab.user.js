@@ -2,14 +2,11 @@
 // @name         网页一键置顶/置底（按钮 + 快捷键）
 // @name:en      Jump to Top / Bottom with Hotkeys
 // @namespace    https://github.com/SouloTim/Jump-Top-Down-Tab
-// @version      2026.11.24.1
+// @version      2026.11.24.2
 // @author       Tim.soul
 // @description  为网页添加「回到顶部 / 跳转到底部」悬浮按钮，按 Home / End 也可一键跳转；按钮随滚动位置智能显隐。
 // @description:en Floating Back-to-Top / Jump-to-Bottom buttons with Home / End hotkeys.
 // @include      *
-// @exclude      https://mail.google.com/*
-// @exclude      http://dzh.mop.com/*
-// @exclude      http://www.douban.com/photos/*
 // @grant        none
 // @license      MIT
 // @homepageURL  https://github.com/SouloTim/Jump-Top-Down-Tab
