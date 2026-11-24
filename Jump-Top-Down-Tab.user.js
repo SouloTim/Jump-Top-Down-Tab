@@ -2,7 +2,7 @@
 // @name         网页一键置顶/置底（按钮 + 快捷键）
 // @name:en      Jump to Top / Bottom with Hotkeys
 // @namespace    https://github.com/SouloTim/Jump-Top-Down-Tab
-// @version      2026.11.24.3
+// @version      2026.11.24.4
 // @author       Tim.soul
 // @description  为网页添加「回到顶部 / 跳转到底部」悬浮按钮，按 Home / End 也可一键跳转；按钮随滚动位置智能显隐，配色随页面明暗自动适配。
 // @description:en Floating Back-to-Top / Jump-to-Bottom buttons with Home / End hotkeys and auto-adaptive colors.
@@ -30,7 +30,7 @@
     // 两套实色配色（无渐变、无描边、无阴影）
     const THEME = {
         light: { bg: '#0F6E56', fg: '#ffffff' },
-        dark:  { bg: '#FAC775', fg: '#412402' },
+        dark:  { bg: '#4ECDC4', fg: '#082E2B' },
     };
 
     /* ============ 样式 ============ */
