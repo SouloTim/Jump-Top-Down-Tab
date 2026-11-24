@@ -2,10 +2,10 @@
 // @name         网页一键置顶/置底（按钮 + 快捷键）
 // @name:en      Jump to Top / Bottom with Hotkeys
 // @namespace    https://github.com/SouloTim/Jump-Top-Down-Tab
-// @version      2026.11.24.2
+// @version      2026.11.24.3
 // @author       Tim.soul
-// @description  为网页添加「回到顶部 / 跳转到底部」悬浮按钮，按 Home / End 也可一键跳转；按钮随滚动位置智能显隐。
-// @description:en Floating Back-to-Top / Jump-to-Bottom buttons with Home / End hotkeys.
+// @description  为网页添加「回到顶部 / 跳转到底部」悬浮按钮，按 Home / End 也可一键跳转；按钮随滚动位置智能显隐，配色随页面明暗自动适配。
+// @description:en Floating Back-to-Top / Jump-to-Bottom buttons with Home / End hotkeys and auto-adaptive colors.
 // @include      *
 // @grant        none
 // @license      MIT
@@ -18,11 +18,19 @@
 
     /* ============ 配置 ============ */
     const CFG = {
-        size: 40,             // 按钮边长(px)
+        size: 38,             // 按钮边长(px)
+        radius: 10,           // 按钮圆角(px)
         right: 20,            // 距右侧(px)
         topOffset: '60%',     // 「置顶」按钮垂直位置
         bottomOffset: '40%',  // 「置底」按钮垂直位置
         showGap: 100,         // 距顶/底超过该像素才显示对应按钮
+        darkThreshold: 0.4,   // 相对亮度低于此值判为深色页面
+    };
+
+    // 两套实色配色（无渐变、无描边、无阴影）
+    const THEME = {
+        light: { bg: '#0F6E56', fg: '#ffffff' },
+        dark:  { bg: '#FAC775', fg: '#412402' },
     };
 
     /* ============ 样式 ============ */
@@ -36,28 +44,24 @@
             'display: flex !important',
             'align-items: center !important',
             'justify-content: center !important',
-            'border-radius: 50% !important',
-            'color: #fff !important',
-            'font-size: 24px !important',
+            `border-radius: ${CFG.radius}px !important`,
+            'font-size: 20px !important',
             'line-height: 1 !important',
             'text-align: center !important',
-            'opacity: .9',
+            'opacity: .95',
             'cursor: pointer',
             'user-select: none !important',
-            'background: linear-gradient(45deg, #ff6b6b, #4ecdc4) !important',
-            'box-shadow: 0 4px 12px rgba(255,107,107,.4) !important',
-            'transition: transform .25s ease, box-shadow .25s ease, opacity .25s ease',
+            'transition: transform .2s ease, opacity .2s ease, background-color .25s ease, color .25s ease',
         ].join('; '),
         top: `bottom: ${CFG.topOffset} !important`,
         bottom: `bottom: ${CFG.bottomOffset} !important`,
     };
 
-    const HOVER_SHADOW = '0 6px 16px rgba(255,107,107,.6)';
-    const BASE_SHADOW  = '0 4px 12px rgba(255,107,107,.4)';
-
     const docEl = document.documentElement;
     let maxScroll = 0;      // 缓存最大可滚动距离，避免滚动时强制回流
     let measureRaf = 0;
+    let themeRaf = 0;
+    let isDark = null;
     let topBtn = null;
     let bottomBtn = null;
 
@@ -88,6 +92,78 @@
         refresh();
     }
 
+    // 解析 CSS 颜色为 [r,g,b,a]，支持 rgb()/rgba() 与 #hex
+    function parseColor(str) {
+        if (!str) return null;
+        str = str.trim();
+        const rgb = str.match(/^rgba?\(([^)]+)\)$/i);
+        if (rgb) {
+            const p = rgb[1].split(',').map(x => parseFloat(x));
+            return [p[0], p[1], p[2], p.length > 3 ? p[3] : 1];
+        }
+        const hex = str.match(/^#([0-9a-f]{3,8})$/i);
+        if (hex) {
+            let h = hex[1];
+            if (h.length === 3) h = h.split('').map(c => c + c).join('');
+            if (h.length >= 6) {
+                return [
+                    parseInt(h.slice(0, 2), 16),
+                    parseInt(h.slice(2, 4), 16),
+                    parseInt(h.slice(4, 6), 16),
+                    h.length >= 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1,
+                ];
+            }
+        }
+        return null;
+    }
+
+    // WCAG 相对亮度
+    function luminance(r, g, b) {
+        const f = c => {
+            c /= 255;
+            return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    }
+
+    // 检测页面是否为深色背景：沿 body → html → 父链找第一个不透明背景色
+    function detectDark() {
+        let el = document.body || docEl;
+        while (el && el.nodeType === 1) {
+            const c = parseColor(window.getComputedStyle(el).backgroundColor);
+            if (c && c[3] > 0.5) return luminance(c[0], c[1], c[2]) < CFG.darkThreshold;
+            el = el.parentElement;
+        }
+        // 全透明时回退到系统主题偏好
+        try {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    // 应用配色（仅在明暗判定变化时写 DOM）
+    function applyTheme(force) {
+        const dark = detectDark();
+        if (!force && dark === isDark) return;
+        isDark = dark;
+        const t = dark ? THEME.dark : THEME.light;
+        [topBtn, bottomBtn].forEach(btn => {
+            if (!btn) return;
+            btn.style.setProperty('background-color', t.bg, 'important');
+            btn.style.setProperty('color', t.fg, 'important');
+        });
+    }
+
+    // rAF 节流的主题重算
+    function scheduleTheme() {
+        if (themeRaf) return;
+        themeRaf = requestAnimationFrame(() => {
+            themeRaf = 0;
+            applyTheme(false);
+        });
+    }
+
     // 焦点是否在可编辑元素内（避免劫持输入框的 Home/End）
     function isEditable(el) {
         if (!el || el.nodeType !== 1) return false;
@@ -115,14 +191,8 @@
         btn.title = isTop ? '回到顶部 (Home)' : '跳转到底部 (End)';
         btn.style.cssText = CSS.common + '; ' + (isTop ? CSS.top : CSS.bottom);
 
-        btn.addEventListener('mouseenter', () => {
-            btn.style.transform = 'scale(1.1)';
-            btn.style.setProperty('box-shadow', HOVER_SHADOW, 'important');
-        });
-        btn.addEventListener('mouseleave', () => {
-            btn.style.transform = 'scale(1)';
-            btn.style.setProperty('box-shadow', BASE_SHADOW, 'important');
-        });
+        btn.addEventListener('mouseenter', () => { btn.style.transform = 'scale(1.08)'; });
+        btn.addEventListener('mouseleave', () => { btn.style.transform = 'scale(1)'; });
         btn.addEventListener('click', () => scrollToY(isTop ? 0 : maxScroll));
         // 键盘激活：Tab 聚焦后 Enter / 空格触发（空格需阻止默认滚动）
         btn.addEventListener('keydown', (e) => {
@@ -199,7 +269,22 @@
         }
 
         setupHotkeys();
+        applyTheme(true);
         measure();
+
+        // 监听页面主题变化（body/html 的 style 或 class 变动）
+        if (typeof MutationObserver !== 'undefined') {
+            const mo = new MutationObserver(scheduleTheme);
+            [document.body, docEl].forEach(el => {
+                if (el) mo.observe(el, { attributes: true, attributeFilter: ['style', 'class', 'data-theme'] });
+            });
+        }
+        // 监听系统主题偏好变化
+        try {
+            const mq = window.matchMedia('(prefers-color-scheme: dark)');
+            if (mq.addEventListener) mq.addEventListener('change', scheduleTheme);
+            else if (mq.addListener) mq.addListener(scheduleTheme);
+        } catch (e) { /* 旧浏览器不支持则忽略 */ }
     }
 
     if (document.readyState === 'loading') {
