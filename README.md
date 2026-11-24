@@ -28,9 +28,12 @@
 
 在输入框、文本域、可编辑区域中按 Home / End 保持浏览器原生行为（移动到行首 / 行尾）。
 
-## 文件
+## 文件与文档
 
 - Jump-Top-Down-Tab.user.js：脚本主文件，可直接安装
+- CHANGELOG.md：面向团队的变更说明（改动明细、影响、升级指引）
+- docs/TEST_REPORT.md：测试报告（44 项结论、初测失败项分析、已知限制）
+- tests/regression.test.js：回归测试（改动后验证功能，详见 tests/README.md）
 
 ## 变更记录
 

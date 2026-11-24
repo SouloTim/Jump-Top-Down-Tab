@@ -1,0 +1,5 @@
+# 回归测试运行产物（每次运行动态生成，不纳入版本控制）
+tests/regression-report.json
+
+# 系统文件
+.DS_Store
