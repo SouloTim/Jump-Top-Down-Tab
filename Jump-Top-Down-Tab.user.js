@@ -2,7 +2,7 @@
 // @name         网页一键置顶/置底（按钮 + 快捷键）
 // @name:en      Jump to Top / Bottom with Hotkeys
 // @namespace    https://github.com/SouloTim/Jump-Top-Down-Tab
-// @version      2026.11.24.4
+// @version      2026.11.24.5
 // @author       Tim.soul
 // @description  为网页添加「回到顶部 / 跳转到底部」悬浮按钮，按 Home / End 也可一键跳转；按钮随滚动位置智能显隐，配色随页面明暗自动适配。
 // @description:en Floating Back-to-Top / Jump-to-Bottom buttons with Home / End hotkeys and auto-adaptive colors.
@@ -11,7 +11,22 @@
 // @license      MIT
 // @homepageURL  https://github.com/SouloTim/Jump-Top-Down-Tab
 // @supportURL   https://github.com/SouloTim/Jump-Top-Down-Tab/issues
+// @run-at       document-idle
 // ==/UserScript==
+
+/*
+ * ============================================================
+ * 修改备注（2026.11.24.5）
+ * 1. 显式声明 @run-at document-idle：不同脚本管理器的默认注入时机不一致，
+ *    显式声明可确保按钮在 DOM 就绪后注入，避免偶发的 body 尚未就绪问题。
+ * 2. 平滑滚动改用能力检测：原 try/catch 在旧浏览器上无效——不支持 options
+ *    的 scrollTo 不会抛异常，而是把对象隐式转为 NaN，导致静默滚到顶部。
+ * 3. setVisible 增加显示状态缓存：scroll 事件高频触发时避免重复写 DOM 属性。
+ * 4. 主题监听扩展到 html 子树：部分站点通过嵌套元素或 <meta> 切换主题，
+ *    只监听 body/html 自身属性会漏掉；rAF 节流 + isDark 缓存防止过度重算。
+ * 其余逻辑保持 v2026.11.24.4 行为不变。
+ * ============================================================
+ */
 
 (function () {
     'use strict';
@@ -28,6 +43,7 @@
     };
 
     // 两套实色配色（无渐变、无描边、无阴影）
+    // 2026.11.24.4：深色页由亮黄 #FAC775 改为柔和青 #4ECDC4，降低冲击、与浅色页深青同色系
     const THEME = {
         light: { bg: '#0F6E56', fg: '#ffffff' },
         dark:  { bg: '#4ECDC4', fg: '#082E2B' },
@@ -58,6 +74,8 @@
     };
 
     const docEl = document.documentElement;
+    // 修改备注 2：用能力检测替代 try/catch，兼容不支持 scroll options 的旧浏览器
+    const SUPPORTS_SMOOTH = 'scrollBehavior' in docEl.style;
     let maxScroll = 0;      // 缓存最大可滚动距离，避免滚动时强制回流
     let measureRaf = 0;
     let themeRaf = 0;
@@ -70,11 +88,11 @@
         return window.scrollY || window.pageYOffset || docEl.scrollTop || 0;
     }
 
-    // 平滑滚动，不支持时降级
+    // 平滑滚动，不支持时降级（判定见 SUPPORTS_SMOOTH）
     function scrollToY(y) {
-        try {
+        if (SUPPORTS_SMOOTH) {
             window.scrollTo({ top: y, behavior: 'smooth' });
-        } catch (e) {
+        } else {
             window.scrollTo(0, y);
         }
     }
@@ -173,7 +191,10 @@
     }
 
     // 切换显隐：必须用 setProperty 带 important，才能覆盖 cssText 里的 !important
+    // 修改备注 3：状态缓存，同一状态不重复写 DOM（scroll 事件每秒可触发数十次）
     function setVisible(btn, visible) {
+        if (btn._jtbVisible === visible) return;
+        btn._jtbVisible = visible;
         btn.style.setProperty('display', visible ? 'flex' : 'none', 'important');
         btn.style.visibility = visible ? 'visible' : 'hidden';
         btn.setAttribute('aria-hidden', visible ? 'false' : 'true');
@@ -235,7 +256,7 @@
 
     /* ============ 初始化 ============ */
     function init() {
-        if (window.self !== window.top) return;                       // 仅在顶层页面运行
+        if (window.self !== window.top) return;                       // 仅在顶层页面运行，忽略 iframe
         if (!document.body) return;                                   // body 尚未就绪
         if (document.getElementById('top-jump-button') ||
             document.getElementById('bottom-jump-button')) return;    // 防重复注入
@@ -272,11 +293,14 @@
         applyTheme(true);
         measure();
 
-        // 监听页面主题变化（body/html 的 style 或 class 变动）
+        // 修改备注 4：监听 html 子树属性变化（含 <meta> 与嵌套元素），覆盖更多站点主题切换方式；
+        // 配合 rAF 节流与 applyTheme 的 isDark 缓存，不会因频繁变化重复写 DOM
         if (typeof MutationObserver !== 'undefined') {
             const mo = new MutationObserver(scheduleTheme);
-            [document.body, docEl].forEach(el => {
-                if (el) mo.observe(el, { attributes: true, attributeFilter: ['style', 'class', 'data-theme'] });
+            mo.observe(docEl, {
+                attributes: true,
+                attributeFilter: ['style', 'class', 'data-theme', 'data-color-mode', 'content'],
+                subtree: true,
             });
         }
         // 监听系统主题偏好变化
