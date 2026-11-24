@@ -2,7 +2,7 @@
 // @name         网页一键置顶/置底（按钮 + 快捷键）
 // @name:en      Jump to Top / Bottom with Hotkeys
 // @namespace    https://github.com/SouloTim/Jump-Top-Down-Tab
-// @version      2026.11.24
+// @version      2026.11.24.1
 // @author       Tim.soul
 // @description  为网页添加「回到顶部 / 跳转到底部」悬浮按钮，按 Home / End 也可一键跳转；按钮随滚动位置智能显隐。
 // @description:en Floating Back-to-Top / Jump-to-Bottom buttons with Home / End hotkeys.
@@ -58,27 +58,37 @@
     const HOVER_SHADOW = '0 6px 16px rgba(255,107,107,.6)';
     const BASE_SHADOW  = '0 4px 12px rgba(255,107,107,.4)';
 
+    const docEl = document.documentElement;
+    let maxScroll = 0;      // 缓存最大可滚动距离，避免滚动时强制回流
+    let measureRaf = 0;
+    let topBtn = null;
+    let bottomBtn = null;
+
     /* ============ 工具函数 ============ */
+    function getScrollY() {
+        return window.scrollY || window.pageYOffset || docEl.scrollTop || 0;
+    }
+
     // 平滑滚动，不支持时降级
-    function scrollTo(target) {
+    function scrollToY(y) {
         try {
-            window.scrollTo({ top: target, behavior: 'smooth' });
+            window.scrollTo({ top: y, behavior: 'smooth' });
         } catch (e) {
-            window.scrollTo(0, target);
+            window.scrollTo(0, y);
         }
     }
 
-    // 目标滚动位置（置底时避免负值）
-    function targetScroll(isTop) {
-        if (isTop) return 0;
-        const doc = document.documentElement;
+    // 重新测量文档高度（会触发回流，仅在初始化/尺寸变化时调用）
+    function measure() {
         const body = document.body;
-        const max = Math.max(
-            body.scrollHeight, doc.scrollHeight,
-            body.offsetHeight, doc.offsetHeight,
-            doc.clientHeight
+        const viewH = window.innerHeight || docEl.clientHeight;
+        const docH = Math.max(
+            body.scrollHeight, docEl.scrollHeight,
+            body.offsetHeight, docEl.offsetHeight,
+            docEl.clientHeight
         );
-        return Math.max(0, max - window.innerHeight);
+        maxScroll = Math.max(0, docH - viewH);
+        refresh();
     }
 
     // 焦点是否在可编辑元素内（避免劫持输入框的 Home/End）
@@ -93,6 +103,7 @@
     function setVisible(btn, visible) {
         btn.style.setProperty('display', visible ? 'flex' : 'none', 'important');
         btn.style.visibility = visible ? 'visible' : 'hidden';
+        btn.setAttribute('aria-hidden', visible ? 'false' : 'true');
     }
 
     /* ============ 创建按钮 ============ */
@@ -102,6 +113,8 @@
         btn.textContent = isTop ? '↑' : '↓';
         btn.setAttribute('role', 'button');
         btn.setAttribute('aria-label', isTop ? '回到顶部（Home）' : '跳转到底部（End）');
+        btn.setAttribute('aria-hidden', 'true');
+        btn.tabIndex = 0;
         btn.title = isTop ? '回到顶部 (Home)' : '跳转到底部 (End)';
         btn.style.cssText = CSS.common + '; ' + (isTop ? CSS.top : CSS.bottom);
 
@@ -113,12 +126,28 @@
             btn.style.transform = 'scale(1)';
             btn.style.setProperty('box-shadow', BASE_SHADOW, 'important');
         });
-        btn.addEventListener('click', () => scrollTo(targetScroll(isTop)));
+        btn.addEventListener('click', () => scrollToY(isTop ? 0 : maxScroll));
+        // 键盘激活：Tab 聚焦后 Enter / 空格触发（空格需阻止默认滚动）
+        btn.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+                e.preventDefault();
+                scrollToY(isTop ? 0 : maxScroll);
+            }
+        });
         // 阻止按钮上的鼠标事件冒泡，避免触发页面自身的处理器
         ['mousedown', 'mouseup'].forEach(evt =>
             btn.addEventListener(evt, e => e.stopPropagation())
         );
         return btn;
+    }
+
+    /* ============ 刷新按钮状态 ============ */
+    // 仅读取 scrollY，不触碰布局属性，避免滚动时强制同步布局
+    function refresh() {
+        if (!topBtn || !bottomBtn) return;
+        const y = getScrollY();
+        setVisible(topBtn, y > CFG.showGap);
+        setVisible(bottomBtn, y < maxScroll - CFG.showGap);
     }
 
     /* ============ 快捷键 ============ */
@@ -129,10 +158,10 @@
 
             if (e.key === 'Home') {
                 e.preventDefault();
-                scrollTo(0);
+                scrollToY(0);
             } else if (e.key === 'End') {
                 e.preventDefault();
-                scrollTo(targetScroll(false));
+                scrollToY(maxScroll);
             }
         }, true);
     }
@@ -144,24 +173,25 @@
         if (document.getElementById('top-jump-button') ||
             document.getElementById('bottom-jump-button')) return;    // 防重复注入
 
-        const topBtn = createButton(true);
-        const bottomBtn = createButton(false);
-
-        function refresh() {
-            const scrollY = window.scrollY || window.pageYOffset || 0;
-            const viewH = window.innerHeight || document.documentElement.clientHeight;
-            const docH = Math.max(
-                document.body.scrollHeight,
-                document.documentElement.scrollHeight,
-                document.body.offsetHeight,
-                document.documentElement.offsetHeight
-            );
-            setVisible(topBtn, scrollY > CFG.showGap);
-            setVisible(bottomBtn, scrollY + viewH < docH - CFG.showGap);
-        }
+        topBtn = createButton(true);
+        bottomBtn = createButton(false);
 
         window.addEventListener('scroll', refresh, { passive: true });
-        window.addEventListener('resize', refresh, { passive: true });
+
+        // 尺寸变化时用 rAF 合并测量，避免 ResizeObserver 回调里改样式造成循环
+        function scheduleMeasure() {
+            if (measureRaf) return;
+            measureRaf = requestAnimationFrame(() => {
+                measureRaf = 0;
+                measure();
+            });
+        }
+        window.addEventListener('resize', scheduleMeasure, { passive: true });
+        if (typeof ResizeObserver !== 'undefined') {
+            const ro = new ResizeObserver(scheduleMeasure);
+            ro.observe(document.body);
+            ro.observe(docEl);
+        }
 
         try {
             document.body.appendChild(topBtn);
@@ -172,7 +202,7 @@
         }
 
         setupHotkeys();
-        refresh();
+        measure();
     }
 
     if (document.readyState === 'loading') {

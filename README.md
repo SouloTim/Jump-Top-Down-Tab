@@ -31,6 +31,12 @@
 
 ## 变更记录
 
+### 2026.11.24.1
+
+- 性能：缓存最大滚动距离，滚动回调只读 scrollY，消除 layout thrashing；用 ResizeObserver + rAF 仅在尺寸变化时重测
+- 可访问性：按钮支持 Tab 聚焦、Enter / 空格激活，并同步 aria-hidden 状态
+- 健壮性：统一高度计算、补充 scrollTop 兜底、将 scrollTo 重命名为 scrollToY 避免遮蔽
+
 ### 2026.11.24
 
 - 修复：`style.display = '... !important'` 无效赋值导致显隐控制失效，改用 `setProperty(..., 'important')`
